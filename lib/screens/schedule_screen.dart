@@ -29,6 +29,22 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
+  Future<void> _toggleSchedule(Schedule schedule) async {
+    final provider = Provider.of<ScheduleProvider>(context, listen: false);
+    final success = await provider.toggleSchedule(schedule);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success
+              ? 'Schedule ${schedule.enabled ? 'disabled' : 'enabled'}'
+              : 'Failed to update schedule'),
+          backgroundColor: success ? Colors.green : Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _deleteSchedule(int id) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -153,17 +169,40 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   ),
                   ...schedules.map((schedule) => Card(
                         margin: const EdgeInsets.only(bottom: 8),
+                        color: schedule.enabled ? null : Colors.grey.shade100,
                         child: ListTile(
                           leading: CircleAvatar(
-                            child: Text(schedule.timeString.substring(0, 2)),
+                            backgroundColor: schedule.enabled ? Colors.blue : Colors.grey,
+                            child: Text(
+                              schedule.timeString.substring(0, 2),
+                              style: const TextStyle(color: Colors.white),
+                            ),
                           ),
-                          title: Text(schedule.label),
+                          title: Text(
+                            schedule.label,
+                            style: TextStyle(
+                              color: schedule.enabled ? Colors.black : Colors.grey.shade600,
+                              decoration: schedule.enabled ? null : TextDecoration.lineThrough,
+                            ),
+                          ),
                           subtitle: Text(
-                            '${schedule.timeString} • ${schedule.duration}s duration',
+                            '${schedule.timeString} • ${schedule.duration}s duration${schedule.enabled ? '' : ' • Disabled'}',
+                            style: TextStyle(
+                              color: schedule.enabled ? null : Colors.grey.shade600,
+                            ),
                           ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () => _deleteSchedule(schedule.id),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Switch(
+                                value: schedule.enabled,
+                                onChanged: (value) => _toggleSchedule(schedule),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () => _deleteSchedule(schedule.id),
+                              ),
+                            ],
                           ),
                         ),
                       )),
@@ -274,7 +313,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<int>(
-                value: _selectedDay,
+                initialValue: _selectedDay,
                 decoration: const InputDecoration(
                   labelText: 'Day of Week',
                   border: OutlineInputBorder(),
@@ -307,7 +346,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<int>(
-                value: _duration,
+                initialValue: _duration,
                 decoration: const InputDecoration(
                   labelText: 'Duration (seconds)',
                   border: OutlineInputBorder(),

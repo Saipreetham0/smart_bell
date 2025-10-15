@@ -43,6 +43,16 @@ class ESP32Api {
     }
   }
 
+  Future<bool> updateSchedule(Schedule schedule) async {
+    try {
+      // Delete and re-add since firmware doesn't have update endpoint
+      await deleteSchedule(schedule.id);
+      return await addSchedule(schedule);
+    } catch (e) {
+      throw Exception('Error updating schedule: $e');
+    }
+  }
+
   Future<bool> deleteSchedule(int id) async {
     try {
       final response = await http
@@ -110,7 +120,7 @@ class ESP32Api {
     }
   }
 
-  Future<DateTime?> getTime() async {
+  Future<Map<String, dynamic>?> getTime() async {
     try {
       final response = await http
           .get(Uri.parse('$baseUrl/get_time'))
@@ -118,14 +128,18 @@ class ESP32Api {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return DateTime(
-          data['year'],
-          data['month'],
-          data['day'],
-          data['hour'],
-          data['minute'],
-          data['second'],
-        );
+        return {
+          'dateTime': DateTime(
+            data['year'],
+            data['month'],
+            data['day'],
+            data['hour'],
+            data['minute'],
+            data['second'],
+          ),
+          'temperature': data['temperature']?.toDouble() ?? 0.0,
+          'dayOfWeek': data['dayOfWeek'] ?? 0,
+        };
       }
       return null;
     } catch (e) {

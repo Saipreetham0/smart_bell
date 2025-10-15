@@ -160,6 +160,16 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     const Divider(height: 1),
                     ListTile(
+                      leading: const Icon(Icons.thermostat),
+                      title: const Text('RTC Temperature'),
+                      subtitle: Text(
+                        provider.rtcTemperature > 0
+                            ? '${provider.rtcTemperature.toStringAsFixed(1)}°C'
+                            : 'Not available',
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
                       leading: const Icon(Icons.smartphone),
                       title: const Text('Phone Time'),
                       subtitle: Text(

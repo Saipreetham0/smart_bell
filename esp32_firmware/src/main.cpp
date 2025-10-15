@@ -1,25 +1,25 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Preferences.h>
+#include <ArduinoJson.h>
 #include <Wire.h>
 #include <RTClib.h>
-#include <ArduinoJson.h>
 
 // Pin Definitions
-#define RELAY_PIN 25
-#define LED_PIN 2
-#define MANUAL_BUTTON_PIN 34
-#define SDA_PIN 21
-#define SCL_PIN 22
+#define RELAY_PIN 27
+#define LED_PIN 15
+#define SQW_PIN 4  // DS3231 Square Wave output (optional)
+#define SDA_PIN 21 // DS3231 I2C Data
+#define SCL_PIN 22 // DS3231 I2C Clock
 
 // WiFi AP Configuration
 const char* AP_SSID = "SmartBell_AP";
 const char* AP_PASSWORD = "smartbell123";
 
 // Objects
-RTC_DS3231 rtc;
 WebServer server(80);
 Preferences preferences;
+RTC_DS3231 rtc;
 
 // Schedule Structure
 struct Schedule {
@@ -38,8 +38,7 @@ int scheduleCount = 0;
 unsigned long bellStartTime = 0;
 bool bellRinging = false;
 int bellDuration = 0;
-bool manualButtonPressed = false;
-unsigned long lastButtonCheck = 0;
+bool rtcAvailable = false;
 
 // Function Declarations
 void setupWiFiAP();
@@ -55,19 +54,26 @@ void handleDeleteSchedule();
 void handleRingNow();
 void handleTimeSync();
 void handleGetTime();
-void checkManualButton();
 
 void setup() {
   Serial.begin(115200);
 
-  // Initialize pins
-  pinMode(RELAY_PIN, OUTPUT);
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(MANUAL_BUTTON_PIN, INPUT_PULLUP);
+  // CRITICAL: Set relay and LED LOW before setting pinMode to ensure they start OFF
   digitalWrite(RELAY_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
 
-  // Initialize I2C
+  // Initialize pins
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(SQW_PIN, INPUT_PULLUP);  // Optional: for RTC square wave
+
+  // Ensure relay and LED are OFF
+  digitalWrite(RELAY_PIN, LOW);
+  digitalWrite(LED_PIN, LOW);
+
+  delay(1000);
+
+  // Initialize I2C for RTC
   Wire.begin(SDA_PIN, SCL_PIN);
 
   // Initialize RTC
@@ -97,7 +103,6 @@ void setup() {
 void loop() {
   server.handleClient();
   checkSchedules();
-  checkManualButton();
 
   // Handle bell duration
   if (bellRinging && (millis() - bellStartTime >= bellDuration * 1000)) {
@@ -115,15 +120,38 @@ void setupWiFiAP() {
 }
 
 void setupRTC() {
+  Serial.println("Initializing DS3231 RTC...");
+
   if (!rtc.begin()) {
-    Serial.println("Couldn't find RTC");
-    while (1);
+    Serial.println("ERROR: Couldn't find DS3231 RTC!");
+    Serial.println("Please check wiring:");
+    Serial.println("  SDA -> GPIO 21");
+    Serial.println("  SCL -> GPIO 22");
+    Serial.println("  VCC -> 3V3");
+    Serial.println("  GND -> GND");
+    rtcAvailable = false;
+    return;
   }
 
+  rtcAvailable = true;
+  Serial.println("DS3231 RTC initialized successfully!");
+
+  // Check if RTC lost power and time is invalid
   if (rtc.lostPower()) {
-    Serial.println("RTC lost power, setting default time");
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    Serial.println("RTC lost power, time needs to be set!");
+    // Set to a default time (will be synced from app)
+    rtc.adjust(DateTime(2024, 1, 1, 0, 0, 0));
   }
+
+  // Print current RTC time
+  DateTime now = rtc.now();
+  Serial.printf("Current RTC time: %d-%02d-%02d %02d:%02d:%02d\n",
+                now.year(), now.month(), now.day(),
+                now.hour(), now.minute(), now.second());
+
+  // Check RTC temperature (DS3231 has built-in temperature sensor)
+  float temp = rtc.getTemperature();
+  Serial.printf("RTC Temperature: %.2f C\n", temp);
 }
 
 void loadSchedules() {
@@ -156,14 +184,22 @@ void saveSchedules() {
 }
 
 void checkSchedules() {
+  if (!rtcAvailable) {
+    return;  // Cannot check schedules without RTC
+  }
+
+  static int lastMinute = -1;
   DateTime now = rtc.now();
+
+  // Only check once per minute
+  if (now.minute() == lastMinute) {
+    return;
+  }
+  lastMinute = now.minute();
+
   int currentHour = now.hour();
   int currentMinute = now.minute();
-  int currentSecond = now.second();
-  int currentDayOfWeek = now.dayOfTheWeek();
-
-  // Only check at the start of each minute
-  if (currentSecond != 0) return;
+  int currentDayOfWeek = now.dayOfTheWeek();  // 0=Sunday, 1=Monday, etc.
 
   for (int i = 0; i < scheduleCount; i++) {
     if (schedules[i].enabled &&
@@ -172,22 +208,10 @@ void checkSchedules() {
         schedules[i].dayOfWeek == currentDayOfWeek) {
 
       ringBell(schedules[i].duration);
-      Serial.printf("Schedule triggered: %s\n", schedules[i].label);
+      Serial.printf("Schedule triggered: %s at %02d:%02d\n",
+                    schedules[i].label, currentHour, currentMinute);
       break;
     }
-  }
-}
-
-void checkManualButton() {
-  if (millis() - lastButtonCheck < 200) return;
-  lastButtonCheck = millis();
-
-  if (digitalRead(MANUAL_BUTTON_PIN) == LOW && !manualButtonPressed) {
-    manualButtonPressed = true;
-    ringBell(5);  // Ring for 5 seconds on manual press
-    Serial.println("Manual button pressed");
-  } else if (digitalRead(MANUAL_BUTTON_PIN) == HIGH) {
-    manualButtonPressed = false;
   }
 }
 
@@ -300,6 +324,11 @@ void handleRingNow() {
 }
 
 void handleTimeSync() {
+  if (!rtcAvailable) {
+    server.send(500, "application/json", "{\"error\":\"RTC not available\"}");
+    return;
+  }
+
   DynamicJsonDocument doc(512);
   deserializeJson(doc, server.arg("plain"));
 
@@ -310,15 +339,21 @@ void handleTimeSync() {
   int minute = doc["minute"];
   int second = doc["second"];
 
+  // Set RTC time
   rtc.adjust(DateTime(year, month, day, hour, minute, second));
 
-  Serial.printf("RTC synced to: %d-%02d-%02d %02d:%02d:%02d\n",
+  Serial.printf("RTC time synced to: %d-%02d-%02d %02d:%02d:%02d\n",
                 year, month, day, hour, minute, second);
 
   server.send(200, "application/json", "{\"success\":true}");
 }
 
 void handleGetTime() {
+  if (!rtcAvailable) {
+    server.send(500, "application/json", "{\"error\":\"RTC not available\"}");
+    return;
+  }
+
   DateTime now = rtc.now();
 
   DynamicJsonDocument doc(256);
@@ -329,6 +364,7 @@ void handleGetTime() {
   doc["minute"] = now.minute();
   doc["second"] = now.second();
   doc["dayOfWeek"] = now.dayOfTheWeek();
+  doc["temperature"] = rtc.getTemperature();  // Bonus: DS3231 temperature
 
   String response;
   serializeJson(doc, response);

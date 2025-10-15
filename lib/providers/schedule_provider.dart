@@ -6,12 +6,14 @@ class ScheduleProvider with ChangeNotifier {
   final ESP32Api _api = ESP32Api();
   List<Schedule> _schedules = [];
   DateTime? _esp32Time;
+  double _rtcTemperature = 0.0;
   bool _isLoading = false;
   String? _error;
   bool _isConnected = false;
 
   List<Schedule> get schedules => _schedules;
   DateTime? get esp32Time => _esp32Time;
+  double get rtcTemperature => _rtcTemperature;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isConnected => _isConnected;
@@ -63,6 +65,39 @@ class ScheduleProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> updateSchedule(Schedule schedule) async {
+    try {
+      final success = await _api.updateSchedule(schedule);
+      if (success) {
+        await loadSchedules();
+      }
+      return success;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> toggleSchedule(Schedule schedule) async {
+    try {
+      final updatedSchedule = Schedule(
+        id: schedule.id,
+        hour: schedule.hour,
+        minute: schedule.minute,
+        duration: schedule.duration,
+        dayOfWeek: schedule.dayOfWeek,
+        label: schedule.label,
+        enabled: !schedule.enabled,
+      );
+      return await updateSchedule(updatedSchedule);
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> deleteSchedule(int id) async {
     try {
       final success = await _api.deleteSchedule(id);
@@ -105,7 +140,11 @@ class ScheduleProvider with ChangeNotifier {
 
   Future<void> fetchESP32Time() async {
     try {
-      _esp32Time = await _api.getTime();
+      final timeData = await _api.getTime();
+      if (timeData != null) {
+        _esp32Time = timeData['dateTime'] as DateTime?;
+        _rtcTemperature = timeData['temperature'] as double? ?? 0.0;
+      }
       notifyListeners();
     } catch (e) {
       _error = e.toString();
