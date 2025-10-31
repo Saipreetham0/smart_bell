@@ -14,7 +14,7 @@
 
 // WiFi AP Configuration
 const char* AP_SSID = "SmartBell_AP";
-const char* AP_PASSWORD = "smartbell123";
+const char* AP_PASSWORD = NULL;  // Open network (no password)
 
 // Objects
 WebServer server(80);
@@ -50,6 +50,7 @@ void ringBell(int duration);
 void stopBell();
 void handleGetSchedules();
 void handleAddSchedule();
+void handleUpdateSchedule();
 void handleDeleteSchedule();
 void handleRingNow();
 void handleTimeSync();
@@ -58,16 +59,12 @@ void handleGetTime();
 void setup() {
   Serial.begin(115200);
 
-  // CRITICAL: Set relay and LED LOW before setting pinMode to ensure they start OFF
-  digitalWrite(RELAY_PIN, LOW);
-  digitalWrite(LED_PIN, LOW);
-
-  // Initialize pins
+  // Initialize pins FIRST before any digitalWrite calls
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
   pinMode(SQW_PIN, INPUT_PULLUP);  // Optional: for RTC square wave
 
-  // Ensure relay and LED are OFF
+  // Now set relay and LED LOW to ensure they start OFF
   digitalWrite(RELAY_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
 
@@ -88,6 +85,7 @@ void setup() {
   // Setup web server routes
   server.on("/get_schedules", HTTP_GET, handleGetSchedules);
   server.on("/add_schedule", HTTP_POST, handleAddSchedule);
+  server.on("/update_schedule", HTTP_POST, handleUpdateSchedule);
   server.on("/delete_schedule", HTTP_POST, handleDeleteSchedule);
   server.on("/ring_now", HTTP_POST, handleRingNow);
   server.on("/time_sync", HTTP_POST, handleTimeSync);
@@ -97,7 +95,9 @@ void setup() {
   server.enableCORS(true);
 
   server.begin();
-  Serial.println("HTTP server started");
+  Serial.println("HTTP server started on port 80");
+  Serial.println("Smart Bell System Ready!");
+  Serial.println("========================================");
 }
 
 void loop() {
@@ -112,7 +112,15 @@ void loop() {
 
 void setupWiFiAP() {
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(AP_SSID, AP_PASSWORD);
+
+  // Create open network (no password)
+  if (AP_PASSWORD == NULL || strlen(AP_PASSWORD) == 0) {
+    WiFi.softAP(AP_SSID);
+    Serial.println("WiFi AP started (Open Network - No Password)");
+  } else {
+    WiFi.softAP(AP_SSID, AP_PASSWORD);
+    Serial.println("WiFi AP started (Password Protected)");
+  }
 
   IPAddress IP = WiFi.softAPIP();
   Serial.print("AP IP address: ");
@@ -122,36 +130,28 @@ void setupWiFiAP() {
 void setupRTC() {
   Serial.println("Initializing DS3231 RTC...");
 
-  if (!rtc.begin()) {
-    Serial.println("ERROR: Couldn't find DS3231 RTC!");
-    Serial.println("Please check wiring:");
-    Serial.println("  SDA -> GPIO 21");
-    Serial.println("  SCL -> GPIO 22");
-    Serial.println("  VCC -> 3V3");
-    Serial.println("  GND -> GND");
+  // rtc.begin() will use the existing Wire instance initialized in setup()
+  if (!rtc.begin(&Wire)) {
+    Serial.println("ERROR: Couldn't find DS3231 RTC! Please check wiring.");
     rtcAvailable = false;
     return;
   }
 
   rtcAvailable = true;
-  Serial.println("DS3231 RTC initialized successfully!");
+  Serial.println("DS3231 RTC initialized!");
 
   // Check if RTC lost power and time is invalid
   if (rtc.lostPower()) {
-    Serial.println("RTC lost power, time needs to be set!");
+    Serial.println("RTC lost power - setting default time. Please sync via app.");
     // Set to a default time (will be synced from app)
     rtc.adjust(DateTime(2024, 1, 1, 0, 0, 0));
   }
 
   // Print current RTC time
   DateTime now = rtc.now();
-  Serial.printf("Current RTC time: %d-%02d-%02d %02d:%02d:%02d\n",
+  Serial.printf("RTC Time: %d-%02d-%02d %02d:%02d:%02d\n",
                 now.year(), now.month(), now.day(),
                 now.hour(), now.minute(), now.second());
-
-  // Check RTC temperature (DS3231 has built-in temperature sensor)
-  float temp = rtc.getTemperature();
-  Serial.printf("RTC Temperature: %.2f C\n", temp);
 }
 
 void loadSchedules() {
@@ -286,6 +286,36 @@ void handleAddSchedule() {
   server.send(200, "application/json", responseStr);
 }
 
+void handleUpdateSchedule() {
+  DynamicJsonDocument doc(1024);
+  deserializeJson(doc, server.arg("plain"));
+
+  int id = doc["id"];
+  bool found = false;
+
+  for (int i = 0; i < scheduleCount; i++) {
+    if (schedules[i].id == id) {
+      // Update the schedule
+      schedules[i].hour = doc["hour"];
+      schedules[i].minute = doc["minute"];
+      schedules[i].duration = doc["duration"];
+      schedules[i].dayOfWeek = doc["dayOfWeek"];
+      strncpy(schedules[i].label, doc["label"] | "Bell", 49);
+      schedules[i].label[49] = '\0';
+      schedules[i].enabled = doc["enabled"] | true;
+      found = true;
+      break;
+    }
+  }
+
+  if (found) {
+    saveSchedules();
+    server.send(200, "application/json", "{\"success\":true}");
+  } else {
+    server.send(404, "application/json", "{\"error\":\"Schedule not found\"}");
+  }
+}
+
 void handleDeleteSchedule() {
   DynamicJsonDocument doc(256);
   deserializeJson(doc, server.arg("plain"));
@@ -364,7 +394,6 @@ void handleGetTime() {
   doc["minute"] = now.minute();
   doc["second"] = now.second();
   doc["dayOfWeek"] = now.dayOfTheWeek();
-  doc["temperature"] = rtc.getTemperature();  // Bonus: DS3231 temperature
 
   String response;
   serializeJson(doc, response);

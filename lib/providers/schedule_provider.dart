@@ -6,14 +6,12 @@ class ScheduleProvider with ChangeNotifier {
   final ESP32Api _api = ESP32Api();
   List<Schedule> _schedules = [];
   DateTime? _esp32Time;
-  double _rtcTemperature = 0.0;
   bool _isLoading = false;
   String? _error;
   bool _isConnected = false;
 
   List<Schedule> get schedules => _schedules;
   DateTime? get esp32Time => _esp32Time;
-  double get rtcTemperature => _rtcTemperature;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isConnected => _isConnected;
@@ -143,7 +141,6 @@ class ScheduleProvider with ChangeNotifier {
       final timeData = await _api.getTime();
       if (timeData != null) {
         _esp32Time = timeData['dateTime'] as DateTime?;
-        _rtcTemperature = timeData['temperature'] as double? ?? 0.0;
       }
       notifyListeners();
     } catch (e) {

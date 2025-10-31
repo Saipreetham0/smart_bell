@@ -2,9 +2,46 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/schedule_provider.dart';
+import '../services/esp32_api.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  Future<void> _showServerUrlDialog(BuildContext context) async {
+    final controller = TextEditingController(text: ESP32Api.baseUrl);
+    final newUrl = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Set Server URL'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: 'http://192.168.x.x'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (newUrl != null && newUrl.isNotEmpty && context.mounted) {
+      ESP32Api.setBaseUrl(newUrl);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Server URL updated')));
+    }
+  }
 
   Future<void> _syncTime(BuildContext context) async {
     final provider = Provider.of<ScheduleProvider>(context, listen: false);
@@ -13,7 +50,9 @@ class SettingsScreen extends StatelessWidget {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(success ? 'Time synced successfully' : 'Failed to sync time'),
+          content: Text(
+            success ? 'Time synced successfully' : 'Failed to sync time',
+          ),
           backgroundColor: success ? Colors.green : Colors.red,
         ),
       );
@@ -54,7 +93,9 @@ class SettingsScreen extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(success ? 'Bell test started' : 'Failed to ring bell'),
+            content: Text(
+              success ? 'Bell test started' : 'Failed to ring bell',
+            ),
             backgroundColor: success ? Colors.green : Colors.red,
           ),
         );
@@ -79,9 +120,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: Consumer<ScheduleProvider>(
         builder: (context, provider, child) {
           return ListView(
@@ -91,10 +130,47 @@ class SettingsScreen extends StatelessWidget {
                 padding: EdgeInsets.all(16),
                 child: Text(
                   'Device Information',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              // Server URL Setting
+              Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      title: const Text('Server URL'),
+                      subtitle: Text(ESP32Api.baseUrl),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.refresh),
+                            onPressed: () {
+                              ESP32Api.resetToDefault();
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Reset to default ESP32 URL'),
+                                  ),
+                                );
+                                setState(() {}); // Refresh the UI
+                              }
+                            },
+                            tooltip: 'Reset to default',
+                          ),
+                          const Icon(Icons.edit),
+                        ],
+                      ),
+                      onTap: () => _showServerUrlDialog(context),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(
+                        'Default: ${ESP32Api.defaultUrl}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Card(
@@ -110,7 +186,9 @@ class SettingsScreen extends StatelessWidget {
                       subtitle: Text(
                         provider.isConnected ? 'Connected' : 'Disconnected',
                         style: TextStyle(
-                          color: provider.isConnected ? Colors.green : Colors.red,
+                          color: provider.isConnected
+                              ? Colors.green
+                              : Colors.red,
                         ),
                       ),
                       trailing: TextButton(
@@ -139,10 +217,7 @@ class SettingsScreen extends StatelessWidget {
                 padding: EdgeInsets.fromLTRB(16, 24, 16, 16),
                 child: Text(
                   'Time Synchronization',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
               Card(
@@ -154,18 +229,10 @@ class SettingsScreen extends StatelessWidget {
                       title: const Text('ESP32 Time'),
                       subtitle: Text(
                         provider.esp32Time != null
-                            ? DateFormat('HH:mm:ss - MMM d, y').format(provider.esp32Time!)
+                            ? DateFormat(
+                                'HH:mm:ss - MMM d, y',
+                              ).format(provider.esp32Time!)
                             : 'Not synced',
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.thermostat),
-                      title: const Text('RTC Temperature'),
-                      subtitle: Text(
-                        provider.rtcTemperature > 0
-                            ? '${provider.rtcTemperature.toStringAsFixed(1)}°C'
-                            : 'Not available',
                       ),
                     ),
                     const Divider(height: 1),
@@ -173,7 +240,9 @@ class SettingsScreen extends StatelessWidget {
                       leading: const Icon(Icons.smartphone),
                       title: const Text('Phone Time'),
                       subtitle: Text(
-                        DateFormat('HH:mm:ss - MMM d, y').format(DateTime.now()),
+                        DateFormat(
+                          'HH:mm:ss - MMM d, y',
+                        ).format(DateTime.now()),
                       ),
                     ),
                     const Divider(height: 1),
@@ -197,10 +266,7 @@ class SettingsScreen extends StatelessWidget {
                 padding: EdgeInsets.fromLTRB(16, 24, 16, 16),
                 child: Text(
                   'Bell Control',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
               Card(
@@ -223,10 +289,7 @@ class SettingsScreen extends StatelessWidget {
                 padding: EdgeInsets.fromLTRB(16, 24, 16, 16),
                 child: Text(
                   'About',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
               Card(
@@ -261,24 +324,40 @@ class SettingsScreen extends StatelessWidget {
                                 children: [
                                   Text(
                                     '1. Connect to ESP32 WiFi',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                  Text('• SSID: SmartBell_AP\n• Password: smartbell123\n'),
+                                  Text(
+                                    '• SSID: SmartBell_AP\n• No password required (open network)\n',
+                                  ),
                                   Text(
                                     '2. Sync Time',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                  Text('• Go to Settings\n• Tap "Sync Time to ESP32"\n'),
+                                  Text(
+                                    '• Go to Settings\n• Tap "Sync Time to ESP32"\n',
+                                  ),
                                   Text(
                                     '3. Add Schedules',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                  Text('• Go to Schedules tab\n• Tap + button\n• Set time, day, and duration\n'),
+                                  Text(
+                                    '• Go to Schedules tab\n• Tap + button\n• Set time, day, and duration\n',
+                                  ),
                                   Text(
                                     '4. Manual Control',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                  Text('• Use "Ring Bell Now" on Home screen\n• Or use manual button on ESP32'),
+                                  Text(
+                                    '• Use "Ring Bell Now" on Home screen\n• Or use manual button on ESP32',
+                                  ),
                                 ],
                               ),
                             ),

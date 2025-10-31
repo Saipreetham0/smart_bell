@@ -3,8 +3,19 @@ import 'package:http/http.dart' as http;
 import '../models/schedule.dart';
 
 class ESP32Api {
-  static const String baseUrl = 'http://192.168.4.1';
+  static const String defaultUrl = 'http://192.168.4.1';
+  static String baseUrl = defaultUrl;
   static const Duration timeout = Duration(seconds: 10);
+
+  // Allow changing base URL at runtime
+  static void setBaseUrl(String url) {
+    baseUrl = url;
+  }
+
+  // Reset URL to default ESP32 access point address
+  static void resetToDefault() {
+    baseUrl = defaultUrl;
+  }
 
   Future<List<Schedule>> getSchedules() async {
     try {
@@ -45,9 +56,19 @@ class ESP32Api {
 
   Future<bool> updateSchedule(Schedule schedule) async {
     try {
-      // Delete and re-add since firmware doesn't have update endpoint
-      await deleteSchedule(schedule.id);
-      return await addSchedule(schedule);
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/update_schedule'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode(schedule.toJson()),
+          )
+          .timeout(timeout);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['success'] == true;
+      }
+      return false;
     } catch (e) {
       throw Exception('Error updating schedule: $e');
     }
@@ -137,7 +158,6 @@ class ESP32Api {
             data['minute'],
             data['second'],
           ),
-          'temperature': data['temperature']?.toDouble() ?? 0.0,
           'dayOfWeek': data['dayOfWeek'] ?? 0,
         };
       }
