@@ -6,6 +6,7 @@ class Schedule {
   final int dayOfWeek;
   final String label;
   final bool enabled;
+  final int mode; // 1=Regular, 2=Mids, 3=Semester
 
   Schedule({
     required this.id,
@@ -15,6 +16,7 @@ class Schedule {
     required this.dayOfWeek,
     required this.label,
     this.enabled = true,
+    this.mode = 1, // Default to Regular mode
   });
 
   factory Schedule.fromJson(Map<String, dynamic> json) {
@@ -26,6 +28,7 @@ class Schedule {
       dayOfWeek: json['dayOfWeek'],
       label: json['label'],
       enabled: json['enabled'] ?? true,
+      mode: json['mode'] ?? 1,
     );
   }
 
@@ -38,6 +41,7 @@ class Schedule {
       'dayOfWeek': dayOfWeek,
       'label': label,
       'enabled': enabled,
+      'mode': mode,
     };
   }
 
@@ -48,5 +52,10 @@ class Schedule {
   String get dayName {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[dayOfWeek];
+  }
+
+  String get modeName {
+    const modes = ['Unknown', 'Regular', 'Mids', 'Semester'];
+    return mode >= 0 && mode < modes.length ? modes[mode] : 'Unknown';
   }
 }

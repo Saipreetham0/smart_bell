@@ -177,4 +177,39 @@ class ESP32Api {
       return false;
     }
   }
+
+  Future<bool> setMode(int mode) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/set_mode'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'mode': mode}),
+          )
+          .timeout(timeout);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      throw Exception('Error setting mode: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> getMode() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/get_mode'))
+          .timeout(timeout);
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      throw Exception('Error getting mode: $e');
+    }
+  }
 }

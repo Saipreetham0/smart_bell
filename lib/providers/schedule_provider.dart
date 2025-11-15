@@ -9,12 +9,16 @@ class ScheduleProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _isConnected = false;
+  int _activeMode = 1; // 1=Regular, 2=Mids, 3=Semester
+  String _activeModeName = 'Regular';
 
   List<Schedule> get schedules => _schedules;
   DateTime? get esp32Time => _esp32Time;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isConnected => _isConnected;
+  int get activeMode => _activeMode;
+  String get activeModeName => _activeModeName;
 
   Future<void> loadSchedules() async {
     _isLoading = true;
@@ -40,6 +44,7 @@ class ScheduleProvider with ChangeNotifier {
     required int duration,
     required int dayOfWeek,
     required String label,
+    int mode = 1, // Default to Regular mode
   }) async {
     try {
       final schedule = Schedule(
@@ -49,6 +54,7 @@ class ScheduleProvider with ChangeNotifier {
         duration: duration,
         dayOfWeek: dayOfWeek,
         label: label,
+        mode: mode,
       );
 
       final success = await _api.addSchedule(schedule);
@@ -168,9 +174,9 @@ class ScheduleProvider with ChangeNotifier {
     final currentDay = now.weekday % 7; // Convert to 0=Sunday format
     final currentMinutes = now.hour * 60 + now.minute;
 
-    // Find next schedule today
+    // Find next schedule today (matching active mode)
     final todaySchedules = _schedules
-        .where((s) => s.enabled && s.dayOfWeek == currentDay)
+        .where((s) => s.enabled && s.mode == _activeMode && s.dayOfWeek == currentDay)
         .where((s) => (s.hour * 60 + s.minute) > currentMinutes)
         .toList();
 
@@ -183,11 +189,11 @@ class ScheduleProvider with ChangeNotifier {
       return todaySchedules.first;
     }
 
-    // Find first schedule in upcoming days
+    // Find first schedule in upcoming days (matching active mode)
     for (int i = 1; i <= 7; i++) {
       final nextDay = (currentDay + i) % 7;
       final nextDaySchedules = _schedules
-          .where((s) => s.enabled && s.dayOfWeek == nextDay)
+          .where((s) => s.enabled && s.mode == _activeMode && s.dayOfWeek == nextDay)
           .toList();
 
       if (nextDaySchedules.isNotEmpty) {
@@ -201,5 +207,41 @@ class ScheduleProvider with ChangeNotifier {
     }
 
     return null;
+  }
+
+  Future<bool> setMode(int mode) async {
+    try {
+      final success = await _api.setMode(mode);
+      if (success) {
+        await fetchMode();
+      }
+      return success;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> fetchMode() async {
+    try {
+      final modeData = await _api.getMode();
+      if (modeData != null) {
+        _activeMode = modeData['mode'] ?? 1;
+        _activeModeName = modeData['modeName'] ?? 'Regular';
+        notifyListeners();
+      }
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+    }
+  }
+
+  List<Schedule> getSchedulesByMode(int mode) {
+    return _schedules.where((s) => s.mode == mode).toList();
+  }
+
+  List<Schedule> getActiveSchedules() {
+    return _schedules.where((s) => s.mode == _activeMode).toList();
   }
 }

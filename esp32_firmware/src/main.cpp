@@ -30,11 +30,13 @@ struct Schedule {
   int dayOfWeek;  // 0=Sunday, 1=Monday, etc.
   char label[50];
   bool enabled;
+  int mode;  // 1=Regular, 2=Mids, 3=Semester
 };
 
 // Global Variables
 Schedule schedules[20];
 int scheduleCount = 0;
+int activeMode = 1;  // Current active mode: 1=Regular, 2=Mids, 3=Semester
 unsigned long bellStartTime = 0;
 bool bellRinging = false;
 int bellDuration = 0;
@@ -55,6 +57,8 @@ void handleDeleteSchedule();
 void handleRingNow();
 void handleTimeSync();
 void handleGetTime();
+void handleSetMode();
+void handleGetMode();
 
 void setup() {
   Serial.begin(115200);
@@ -90,6 +94,8 @@ void setup() {
   server.on("/ring_now", HTTP_POST, handleRingNow);
   server.on("/time_sync", HTTP_POST, handleTimeSync);
   server.on("/get_time", HTTP_GET, handleGetTime);
+  server.on("/set_mode", HTTP_POST, handleSetMode);
+  server.on("/get_mode", HTTP_GET, handleGetMode);
 
   // Enable CORS
   server.enableCORS(true);
@@ -157,6 +163,7 @@ void setupRTC() {
 void loadSchedules() {
   preferences.begin("schedules", false);
   scheduleCount = preferences.getInt("count", 0);
+  activeMode = preferences.getInt("activeMode", 1);  // Load active mode, default to Regular
 
   for (int i = 0; i < scheduleCount; i++) {
     String key = "sch_" + String(i);
@@ -167,7 +174,7 @@ void loadSchedules() {
   }
 
   preferences.end();
-  Serial.printf("Loaded %d schedules\n", scheduleCount);
+  Serial.printf("Loaded %d schedules (Active Mode: %d)\n", scheduleCount, activeMode);
 }
 
 void saveSchedules() {
@@ -202,14 +209,16 @@ void checkSchedules() {
   int currentDayOfWeek = now.dayOfTheWeek();  // 0=Sunday, 1=Monday, etc.
 
   for (int i = 0; i < scheduleCount; i++) {
+    // Check if schedule matches current time, day, and active mode
     if (schedules[i].enabled &&
+        schedules[i].mode == activeMode &&  // Only trigger schedules matching active mode
         schedules[i].hour == currentHour &&
         schedules[i].minute == currentMinute &&
         schedules[i].dayOfWeek == currentDayOfWeek) {
 
       ringBell(schedules[i].duration);
-      Serial.printf("Schedule triggered: %s at %02d:%02d\n",
-                    schedules[i].label, currentHour, currentMinute);
+      Serial.printf("Schedule triggered: %s (Mode %d) at %02d:%02d\n",
+                    schedules[i].label, schedules[i].mode, currentHour, currentMinute);
       break;
     }
   }
@@ -246,6 +255,7 @@ void handleGetSchedules() {
     obj["dayOfWeek"] = schedules[i].dayOfWeek;
     obj["label"] = schedules[i].label;
     obj["enabled"] = schedules[i].enabled;
+    obj["mode"] = schedules[i].mode;
   }
 
   String response;
@@ -271,6 +281,7 @@ void handleAddSchedule() {
   strncpy(newSchedule.label, doc["label"] | "Bell", 49);
   newSchedule.label[49] = '\0';
   newSchedule.enabled = doc["enabled"] | true;
+  newSchedule.mode = doc["mode"] | 1;  // Default to Regular mode
 
   schedules[scheduleCount] = newSchedule;
   scheduleCount++;
@@ -303,6 +314,7 @@ void handleUpdateSchedule() {
       strncpy(schedules[i].label, doc["label"] | "Bell", 49);
       schedules[i].label[49] = '\0';
       schedules[i].enabled = doc["enabled"] | true;
+      schedules[i].mode = doc["mode"] | 1;
       found = true;
       break;
     }
@@ -394,6 +406,50 @@ void handleGetTime() {
   doc["minute"] = now.minute();
   doc["second"] = now.second();
   doc["dayOfWeek"] = now.dayOfTheWeek();
+
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleSetMode() {
+  DynamicJsonDocument doc(256);
+  deserializeJson(doc, server.arg("plain"));
+
+  int newMode = doc["mode"] | 1;
+
+  // Validate mode (1=Regular, 2=Mids, 3=Semester)
+  if (newMode < 1 || newMode > 3) {
+    server.send(400, "application/json", "{\"error\":\"Invalid mode. Must be 1, 2, or 3\"}");
+    return;
+  }
+
+  activeMode = newMode;
+
+  // Save active mode to preferences
+  preferences.begin("schedules", false);
+  preferences.putInt("activeMode", activeMode);
+  preferences.end();
+
+  const char* modeNames[] = {"Unknown", "Regular", "Mids", "Semester"};
+  Serial.printf("Active mode changed to: %d (%s)\n", activeMode, modeNames[activeMode]);
+
+  DynamicJsonDocument response(256);
+  response["success"] = true;
+  response["mode"] = activeMode;
+  response["modeName"] = modeNames[activeMode];
+
+  String responseStr;
+  serializeJson(response, responseStr);
+  server.send(200, "application/json", responseStr);
+}
+
+void handleGetMode() {
+  const char* modeNames[] = {"Unknown", "Regular", "Mids", "Semester"};
+
+  DynamicJsonDocument doc(256);
+  doc["mode"] = activeMode;
+  doc["modeName"] = modeNames[activeMode];
 
   String response;
   serializeJson(doc, response);
