@@ -29,6 +29,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
+  void _showBulkAddDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => const BulkAddScheduleDialog(),
+    );
+  }
+
   Future<void> _toggleSchedule(Schedule schedule) async {
     final provider = Provider.of<ScheduleProvider>(context, listen: false);
     final success = await provider.toggleSchedule(schedule);
@@ -98,6 +105,25 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       appBar: AppBar(
         title: const Text('Schedules'),
         actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'bulk_add') {
+                _showBulkAddDialog();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'bulk_add',
+                child: Row(
+                  children: [
+                    Icon(Icons.add_circle_outline),
+                    SizedBox(width: 8),
+                    Text('Bulk Add Schedules'),
+                  ],
+                ),
+              ),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadSchedules,
@@ -464,5 +490,373 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
         ),
       ],
     );
+  }
+}
+
+class BulkAddScheduleDialog extends StatefulWidget {
+  const BulkAddScheduleDialog({super.key});
+
+  @override
+  State<BulkAddScheduleDialog> createState() => _BulkAddScheduleDialogState();
+}
+
+class _BulkAddScheduleDialogState extends State<BulkAddScheduleDialog> {
+  final _formKey = GlobalKey<FormState>();
+  TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
+  int _periodDuration = 45; // minutes
+  int _breakDuration = 5; // minutes
+  int _numberOfPeriods = 6;
+  int _bellDuration = 5; // seconds
+  int _mode = 1; // Default to Regular mode
+  final List<int> _selectedDays = [1, 2, 3, 4, 5]; // Monday to Friday
+
+  Future<void> _selectTime() async {
+    final time = await showTimePicker(
+      context: context,
+      initialTime: _startTime,
+    );
+
+    if (time != null) {
+      setState(() {
+        _startTime = time;
+      });
+    }
+  }
+
+  Future<void> _createSchedules() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final provider = Provider.of<ScheduleProvider>(context, listen: false);
+    int successCount = 0;
+    int totalSchedules = _numberOfPeriods * _selectedDays.length;
+
+    // Show progress dialog
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Creating Schedules'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text('Creating $totalSchedules schedules...'),
+          ],
+        ),
+      ),
+    );
+
+    // Create schedules for each selected day
+    for (int day in _selectedDays) {
+      int currentMinutes = _startTime.hour * 60 + _startTime.minute;
+
+      for (int period = 1; period <= _numberOfPeriods; period++) {
+        // Add period duration
+        currentMinutes += _periodDuration;
+
+        final hour = currentMinutes ~/ 60;
+        final minute = currentMinutes % 60;
+
+        // Create schedule for period end
+        final success = await provider.addSchedule(
+          hour: hour,
+          minute: minute,
+          duration: _bellDuration,
+          dayOfWeek: day,
+          label: 'Period $period End',
+          mode: _mode,
+        );
+
+        if (success) successCount++;
+
+        // Add break duration (except after last period)
+        if (period < _numberOfPeriods) {
+          currentMinutes += _breakDuration;
+        }
+      }
+    }
+
+    if (mounted) {
+      Navigator.pop(context); // Close progress dialog
+      Navigator.pop(context); // Close bulk add dialog
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Created $successCount of $totalSchedules schedules successfully',
+          ),
+          backgroundColor: successCount == totalSchedules ? Colors.green : Colors.orange,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    return AlertDialog(
+      title: const Text('Bulk Add Schedules'),
+      content: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Create multiple schedules with regular intervals',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+
+              // Start Time
+              ListTile(
+                title: const Text('Start Time'),
+                subtitle: Text(_startTime.format(context)),
+                trailing: const Icon(Icons.access_time),
+                onTap: _selectTime,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                  side: BorderSide(color: Colors.grey.shade400),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Number of Periods
+              TextFormField(
+                initialValue: _numberOfPeriods.toString(),
+                decoration: const InputDecoration(
+                  labelText: 'Number of Periods',
+                  border: OutlineInputBorder(),
+                  suffixText: 'periods',
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) return 'Required';
+                  final num = int.tryParse(value);
+                  if (num == null || num < 1 || num > 10) {
+                    return 'Enter 1-10 periods';
+                  }
+                  return null;
+                },
+                onChanged: (value) {
+                  final num = int.tryParse(value);
+                  if (num != null) {
+                    setState(() {
+                      _numberOfPeriods = num;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Period Duration
+              TextFormField(
+                initialValue: _periodDuration.toString(),
+                decoration: const InputDecoration(
+                  labelText: 'Period Duration',
+                  border: OutlineInputBorder(),
+                  suffixText: 'minutes',
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) return 'Required';
+                  final num = int.tryParse(value);
+                  if (num == null || num < 10 || num > 120) {
+                    return 'Enter 10-120 minutes';
+                  }
+                  return null;
+                },
+                onChanged: (value) {
+                  final num = int.tryParse(value);
+                  if (num != null) {
+                    setState(() {
+                      _periodDuration = num;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Break Duration
+              TextFormField(
+                initialValue: _breakDuration.toString(),
+                decoration: const InputDecoration(
+                  labelText: 'Break Between Periods',
+                  border: OutlineInputBorder(),
+                  suffixText: 'minutes',
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) return 'Required';
+                  final num = int.tryParse(value);
+                  if (num == null || num < 0 || num > 60) {
+                    return 'Enter 0-60 minutes';
+                  }
+                  return null;
+                },
+                onChanged: (value) {
+                  final num = int.tryParse(value);
+                  if (num != null) {
+                    setState(() {
+                      _breakDuration = num;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Bell Duration
+              DropdownButtonFormField<int>(
+                initialValue: _bellDuration,
+                decoration: const InputDecoration(
+                  labelText: 'Bell Duration',
+                  border: OutlineInputBorder(),
+                ),
+                items: [3, 5, 10].map((duration) {
+                  return DropdownMenuItem(
+                    value: duration,
+                    child: Text('$duration seconds'),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _bellDuration = value;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Days Selection
+              const Text('Select Days:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: List.generate(7, (index) {
+                  final isSelected = _selectedDays.contains(index);
+                  return FilterChip(
+                    label: Text(days[index]),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      setState(() {
+                        if (selected) {
+                          _selectedDays.add(index);
+                        } else {
+                          _selectedDays.remove(index);
+                        }
+                        _selectedDays.sort();
+                      });
+                    },
+                  );
+                }),
+              ),
+              const SizedBox(height: 16),
+
+              // Mode Selection
+              DropdownButtonFormField<int>(
+                initialValue: _mode,
+                decoration: const InputDecoration(
+                  labelText: 'Schedule Mode',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 1,
+                    child: Row(
+                      children: [
+                        Icon(Icons.school, color: Colors.green, size: 20),
+                        SizedBox(width: 8),
+                        Text('Regular Classes'),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 2,
+                    child: Row(
+                      children: [
+                        Icon(Icons.assignment, color: Colors.orange, size: 20),
+                        SizedBox(width: 8),
+                        Text('Mid-Term Exams'),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 3,
+                    child: Row(
+                      children: [
+                        Icon(Icons.library_books, color: Colors.purple, size: 20),
+                        SizedBox(width: 8),
+                        Text('Semester Exams'),
+                      ],
+                    ),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _mode = value;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Preview
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Preview:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Will create ${_numberOfPeriods * _selectedDays.length} schedules',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    Text(
+                      'Days: ${_selectedDays.map((d) => days[d]).join(", ")}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    Text(
+                      'Example: Period 1 ends at ${_formatTimeFromMinutes(_startTime.hour * 60 + _startTime.minute + _periodDuration)}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _selectedDays.isEmpty ? null : _createSchedules,
+          child: const Text('Create All'),
+        ),
+      ],
+    );
+  }
+
+  String _formatTimeFromMinutes(int totalMinutes) {
+    final hour = (totalMinutes ~/ 60) % 24;
+    final minute = totalMinutes % 60;
+    return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
   }
 }
