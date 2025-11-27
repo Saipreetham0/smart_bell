@@ -34,7 +34,7 @@ struct Schedule {
 };
 
 // Global Variables
-Schedule schedules[50];  // Increased from 20 to 50 schedules
+Schedule schedules[100];  // Increased to 100 schedules (supports ~33 per mode)
 int scheduleCount = 0;
 int activeMode = 1;  // Current active mode: 1=Regular, 2=Mids, 3=Semester
 unsigned long bellStartTime = 0;
@@ -264,8 +264,8 @@ void handleGetSchedules() {
 }
 
 void handleAddSchedule() {
-  if (scheduleCount >= 50) {
-    server.send(400, "application/json", "{\"error\":\"Maximum schedules reached (50)\"}");
+  if (scheduleCount >= 100) {
+    server.send(400, "application/json", "{\"error\":\"Maximum schedules reached (100)\"}");
     return;
   }
 
