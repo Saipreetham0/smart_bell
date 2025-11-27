@@ -79,6 +79,19 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
+  Color _getModeColor(int mode) {
+    switch (mode) {
+      case 1:
+        return Colors.green; // Regular
+      case 2:
+        return Colors.orange; // Mids
+      case 3:
+        return Colors.purple; // Semester
+      default:
+        return Colors.grey;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -178,12 +191,33 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                               style: const TextStyle(color: Colors.white),
                             ),
                           ),
-                          title: Text(
-                            schedule.label,
-                            style: TextStyle(
-                              color: schedule.enabled ? Colors.black : Colors.grey.shade600,
-                              decoration: schedule.enabled ? null : TextDecoration.lineThrough,
-                            ),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  schedule.label,
+                                  style: TextStyle(
+                                    color: schedule.enabled ? Colors.black : Colors.grey.shade600,
+                                    decoration: schedule.enabled ? null : TextDecoration.lineThrough,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _getModeColor(schedule.mode),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  schedule.modeName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           subtitle: Text(
                             '${schedule.timeString} • ${schedule.duration}s duration${schedule.enabled ? '' : ' • Disabled'}',
@@ -234,6 +268,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
   TimeOfDay _selectedTime = TimeOfDay.now();
   int _selectedDay = DateTime.now().weekday % 7;
   int _duration = 5;
+  int _mode = 1; // Default to Regular mode
 
   @override
   void dispose() {
@@ -264,6 +299,7 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
       duration: _duration,
       dayOfWeek: _selectedDay,
       label: _labelController.text.trim(),
+      mode: _mode,
     );
 
     if (mounted) {
@@ -361,6 +397,54 @@ class _AddScheduleDialogState extends State<AddScheduleDialog> {
                   if (value != null) {
                     setState(() {
                       _duration = value;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<int>(
+                initialValue: _mode,
+                decoration: const InputDecoration(
+                  labelText: 'Schedule Mode',
+                  border: OutlineInputBorder(),
+                  helperText: 'Select when this schedule should ring',
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 1,
+                    child: Row(
+                      children: [
+                        Icon(Icons.school, color: Colors.green, size: 20),
+                        SizedBox(width: 8),
+                        Text('Regular Classes'),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 2,
+                    child: Row(
+                      children: [
+                        Icon(Icons.assignment, color: Colors.orange, size: 20),
+                        SizedBox(width: 8),
+                        Text('Mid-Term Exams'),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 3,
+                    child: Row(
+                      children: [
+                        Icon(Icons.library_books, color: Colors.purple, size: 20),
+                        SizedBox(width: 8),
+                        Text('Semester Exams'),
+                      ],
+                    ),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _mode = value;
                     });
                   }
                 },

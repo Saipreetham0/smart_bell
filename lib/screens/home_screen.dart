@@ -24,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await Future.wait([
         provider.loadSchedules(),
         provider.fetchESP32Time(),
+        provider.fetchMode(),
       ]);
     }
   }
@@ -196,6 +197,59 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 16),
+
+                  // Active Mode Card
+                  Card(
+                    color: _getModeColor(provider.activeMode).withOpacity(0.1),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: _getModeColor(provider.activeMode),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              _getModeIcon(provider.activeMode),
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Active Mode',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  provider.activeModeName,
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: _getModeColor(provider.activeMode),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.check_circle,
+                            color: _getModeColor(provider.activeMode),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 24),
 
                   // Ring Now Button
@@ -230,8 +284,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             provider.schedules.length.toString(),
                           ),
                           _buildStatRow(
+                            '${provider.activeModeName} Schedules',
+                            provider.getActiveSchedules().length.toString(),
+                          ),
+                          _buildStatRow(
                             'Active Schedules',
-                            provider.schedules.where((s) => s.enabled).length.toString(),
+                            provider.schedules.where((s) => s.enabled && s.mode == provider.activeMode).length.toString(),
                           ),
                           _buildStatRow(
                             'Connection Status',
@@ -268,5 +326,31 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  Color _getModeColor(int mode) {
+    switch (mode) {
+      case 1:
+        return Colors.green; // Regular
+      case 2:
+        return Colors.orange; // Mids
+      case 3:
+        return Colors.purple; // Semester
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getModeIcon(int mode) {
+    switch (mode) {
+      case 1:
+        return Icons.school; // Regular
+      case 2:
+        return Icons.assignment; // Mids
+      case 3:
+        return Icons.library_books; // Semester
+      default:
+        return Icons.schedule;
+    }
   }
 }

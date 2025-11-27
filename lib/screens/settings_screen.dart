@@ -12,6 +12,17 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _loadMode();
+  }
+
+  Future<void> _loadMode() async {
+    final provider = Provider.of<ScheduleProvider>(context, listen: false);
+    await provider.fetchMode();
+  }
+
   Future<void> _showServerUrlDialog(BuildContext context) async {
     final controller = TextEditingController(text: ESP32Api.baseUrl);
     final newUrl = await showDialog<String>(
@@ -114,6 +125,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
           backgroundColor: success ? Colors.green : Colors.red,
         ),
       );
+    }
+  }
+
+  Future<void> _setMode(BuildContext context, int mode) async {
+    final provider = Provider.of<ScheduleProvider>(context, listen: false);
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        final modeNames = ['', 'Regular', 'Mids', 'Semester'];
+        return AlertDialog(
+          title: const Text('Switch Schedule Mode'),
+          content: Text(
+            'Switch to ${modeNames[mode]} mode?\n\n'
+            'Only ${modeNames[mode]} schedules will ring.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Switch'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && context.mounted) {
+      final success = await provider.setMode(mode);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              success
+                  ? 'Mode switched to ${provider.activeModeName}'
+                  : 'Failed to switch mode',
+            ),
+            backgroundColor: success ? Colors.green : Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -261,6 +318,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
 
+              // Schedule Mode Section
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 24, 16, 16),
+                child: Text(
+                  'Schedule Mode',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.schedule_outlined),
+                      title: const Text('Current Mode'),
+                      subtitle: Text(
+                        provider.activeModeName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text(
+                            'Switch to:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _ModeButton(
+                                  mode: 1,
+                                  label: 'Regular',
+                                  icon: Icons.school,
+                                  isActive: provider.activeMode == 1,
+                                  onPressed: () => _setMode(context, 1),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _ModeButton(
+                                  mode: 2,
+                                  label: 'Mids',
+                                  icon: Icons.assignment,
+                                  isActive: provider.activeMode == 2,
+                                  onPressed: () => _setMode(context, 2),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _ModeButton(
+                                  mode: 3,
+                                  label: 'Semester',
+                                  icon: Icons.library_books,
+                                  isActive: provider.activeMode == 3,
+                                  onPressed: () => _setMode(context, 3),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
               // Bell Test Section
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 24, 16, 16),
@@ -378,6 +512,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _ModeButton extends StatelessWidget {
+  final int mode;
+  final String label;
+  final IconData icon;
+  final bool isActive;
+  final VoidCallback onPressed;
+
+  const _ModeButton({
+    required this.mode,
+    required this.label,
+    required this.icon,
+    required this.isActive,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton(
+      onPressed: isActive ? null : onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: isActive ? Colors.blue : Colors.grey.shade200,
+        foregroundColor: isActive ? Colors.white : Colors.black87,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        elevation: isActive ? 4 : 1,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 24),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12),
+            textAlign: TextAlign.center,
+          ),
+          if (isActive)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Icon(Icons.check_circle, size: 16),
+            ),
+        ],
       ),
     );
   }
